@@ -7,21 +7,21 @@
 #include <omp.h>
 #include <unistd.h>
 
-
-
-
 typedef struct dataset
 {
-  int32_t len; // length of the dataset (number of rows)
-  int32_t attributes; // number of attributes (number of columns)
+  uint32_t len; // length of the dataset (number of rows)
+  uint32_t attributes; // number of attributes (number of columns)
   float   **data;
 } dataset_t;
-
 
 // function prototypes
 dataset_t load_dataset(char *filepath_ptr, char *delim);
 void free_dataset(dataset_t *d);
-void normalize_dataset(dataset_t *d);
+void init_cv_subsets(dataset_t *src, dataset_t *testing, dataset_t *training,
+                     uint32_t k_fold);
+void load_cv_subsets(dataset_t *src, dataset_t *testing, dataset_t *training, 
+                     uint32_t current_fold, uint32_t k_fold);
+void free_subset(dataset_t *d);
 
 
 int main (int argc, char *argv[])
@@ -159,28 +159,40 @@ int main (int argc, char *argv[])
   }
 
   dataset_t dataset = load_dataset(input_filepath_ptr, delimiter);
-  dataset_t training_set = {};
-  dataset_t test_set = {};
-
+  // dataset_t testing = {};
+  //   dataset_t training  = {};
+  //   init_cv_subsets(&dataset, &testing, &training, k_fold);
   if (k == 0)
   { // user did not specify a value for k, so silhouette coefficients will be
     // used to select an optimal k between k_min and k_max.
+
+    dataset_t testing = {};
+    dataset_t training  = {};
+    init_cv_subsets(&dataset, &testing, &training, k_fold);
+
     for (k = k_min; k <= k_max; ++k)
     {
+      printf("Solving for k = %d\n", k);
 
       // k-fold cross validation
       for (int f = 0; f < k_fold; ++f)
       {
+
+        load_cv_subsets(&dataset, &testing, &training, f, k_fold);
+        printf("%3f %3f %3f\n", dataset.data[0][0], testing.data[0][0], training.data[0][0]);
+        
+
+        
 
       }
 
       
 
     }
-
+    
+    free_subset(&training);
+    free_subset(&testing);
   }
-
-
 
 
   free_dataset(&dataset);
@@ -229,10 +241,10 @@ dataset_t load_dataset(char *filepath_ptr, char *delim)
     printf("attributes: %d\n", d.attributes);
     
     uint32_t rows = 128; // start by allocating 128 rows of space
-    d.data = (float**) malloc(rows * sizeof(float *));
+    d.data = (float **) malloc(rows * sizeof(float *));
 
     while (fgets(buf, sizeof(buf), fp)) {
-        d.data[d.len] = (float*) calloc(d.attributes, sizeof(float));
+        d.data[d.len] = (float *) calloc(d.attributes, sizeof(float));
         char *token = strtok(buf, delim);
         uint32_t i = 0;
         while (token != NULL) {
@@ -270,6 +282,72 @@ void free_dataset(dataset_t *d)
   d->data = NULL;
   return;
 } // end free_dataset()
+
+/* Allocates the space for the testing and training data subsets. Used for 
+ * k-fold cross-validation. Free by calling free_subset(...).
+ */
+void init_cv_subsets(dataset_t *src, dataset_t *testing, dataset_t *training, 
+                     uint32_t k_fold)
+{
+  uint32_t fold_len = src->len / k_fold;
+  size_t fold_sz = fold_len * sizeof(float *);
+
+  testing->attributes  = src->attributes;
+  training->attributes = src->attributes;
+  testing->len  = fold_len;
+  training->len = src->len - fold_len;
+  testing->data  = (float **) malloc( fold_sz );
+  training->data = (float **) malloc( training->len * sizeof(float *) );
+
+  return;
+} // end init_cv_subsets()
+
+/* Copies pointers from source dataset, d, into testing and training subsets for
+ * the current fold iteration. Used for k-fold cross-validation.
+ */
+void load_cv_subsets(dataset_t *src, dataset_t *testing, dataset_t *training, 
+                     uint32_t current_fold, uint32_t k_fold)
+{
+  uint32_t fold_len = src->len / k_fold;
+  size_t fold_sz = fold_len * sizeof(float *);
+  size_t testing_offset = current_fold * fold_sz;
+  float **testing_start = src->data + (current_fold * fold_len);
+  // The memcpy's here will copy the pointers from the source dataset into the
+  // subsets
+  //
+  // ex:
+  //   source dataset: XXXOX
+  //   current_fold = 3
+  //   k_fold = 5
+  //   X = training partition
+  //   0 = testing partition
+  //
+  // copy first part of training data: XXX
+  memcpy(training->data, src->data, testing_offset);
+  // copy all of testing data: O
+  memcpy(testing->data, testing_start, fold_sz);
+  // copy the remaining data in source to the remaining space in training: X
+  memcpy(training->data + (current_fold * fold_len), testing_start + fold_sz, (src->len * sizeof(float)) - fold_sz - testing_offset);
+
+  return;
+} // end load_cv_subsets()
+
+/* Frees the dynamically allocated data in dataset_t, specifically for subsets
+ * to avoid double free.
+ */
+void free_subset(dataset_t *d)
+{
+  // only a single array of pointers is allocated for the purpose of the
+  // subsets, the real data is in the source dataset and should be freed by
+  // calling free_dataset
+  //free(d->data);
+
+  d->len = 0;
+  d->attributes = 0;
+  d->data = NULL;
+  return;
+} // end free_subset()
+
 
 // TODO maybe?
 /* Normalizes data points to values between 0 and 1.
