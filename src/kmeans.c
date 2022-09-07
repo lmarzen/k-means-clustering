@@ -1,9 +1,10 @@
 #include <ctype.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <math.h>
+#include <sys/time.h>
 #include <omp.h>
 #include <unistd.h>
 
@@ -26,8 +27,7 @@ void load_cv_subsets(dataset_t *src, dataset_t *testing, dataset_t *training,
 void free_subset(dataset_t *d);
 float silhouette_analysis(dataset_t *testing, dataset_t *training, 
                       uint32_t num_kmeans, uint32_t num_clusters, 
-                      uint32_t max_iter, float threshold, uint32_t seed, 
-                      uint32_t print);
+                      uint32_t max_iter, float threshold, uint32_t print);
 void kmeans(dataset_t *d, uint32_t num_clusters, uint32_t max_iter, 
             float threshold);
 void normalize(dataset_t *d);
@@ -35,13 +35,13 @@ dataset_t init_centroids(uint32_t k, uint32_t num_attributes);
 void rand_centroids(dataset_t *src, dataset_t *centroids);
 void assign_nearest_cluster(dataset_t *d, uint32_t *data_labels, 
                             dataset_t *centroids);
-void update_centroid_position(dataset_t *d, uint32_t *data_labels, 
-                              dataset_t *centroids);
+uint32_t update_centroid_position(dataset_t *d, uint32_t *data_labels, 
+                                  dataset_t *centroids);
 void print_dataset(dataset_t *d, char *delim);
 void print_dataset_pretty(dataset_t *d);
 
 
-int main (int argc, char *argv[])
+int main(int argc, char *argv[])
 {
   // default options
   char    *input_filepath_ptr = "input.csv";
@@ -56,13 +56,11 @@ int main (int argc, char *argv[])
   int32_t max_iter = 100; // maximum allowed iterations in each k-means
   int32_t num_kmeans = 100; // number of parallel executed k-means
   int32_t k_fold = 10; // number of folds for cross validation
-  int32_t seed = 0; // used to initialize the pseudo-random number generator
-  int32_t num_threads = omp_get_num_threads();
 
   // process option flags
   uint32_t c = 0;
   opterr = 0;
-  while ((c = getopt (argc, argv, "i:d:k:M:m:e:b:n:f:s:t:")) != -1)
+  while ((c = getopt (argc, argv, "i:d:k:M:m:e:b:n:f:t:")) != -1)
   {
     switch (c) 
     {
@@ -128,29 +126,21 @@ int main (int argc, char *argv[])
         return 1;
       }
       break;
-    case 's':
-      if (atoi(optarg) >= 0) {
-        seed = atoi(optarg);
-      } else {
-        printf("Error: seed must be a non-negative integer.\n");
-        return 1;
-      }
-      break;
     case 't':
       if (atoi(optarg) <= 0) {
         printf("Error: number of threads must be a positve integer.\n");
         return 1;
-      } else if (atoi(optarg) > omp_get_num_threads()) {
-        printf("Error: maximum threads is %d.\n", omp_get_num_threads());
-        return 1;
+      // } else if (atoi(optarg) > omp_get_num_threads()) {
+      //   printf("Error: maximum threads is %d.\n", omp_get_num_threads());
+      //   return 1;
       } else {
-        num_threads = atoi(optarg);
+        omp_set_num_threads(atoi(optarg));
       }
       break;
     case '?':
       if (optopt == 'i' || optopt == 'd' || optopt == 'k' || optopt == 'M' || 
           optopt == 'm' || optopt == 'e' || optopt == 'b' || optopt == 'n' ||
-          optopt == 'f' || optopt == 's' || optopt == 't' )
+          optopt == 'f' || optopt == 't' )
         fprintf (stderr, "Option -%c requires an argument.\n", optopt);
       else if (isprint (optopt))
         fprintf (stderr, "Unknown option '-%c'.\n", optopt);
@@ -159,8 +149,8 @@ int main (int argc, char *argv[])
       return 1;
     default:
       return 1;
-  }
-} // end options while-loop
+    }
+  } // end options while-loop
 
   // ignore invalid options, but alert user.
   for (uint32_t i = optind; i < argc; i++)
@@ -174,6 +164,12 @@ int main (int argc, char *argv[])
     printf("Error: k_max must be greater than k_min.\n");
     return 1;
   }
+
+  // generate random seed
+  struct timeval time;
+  gettimeofday(&time, NULL);
+  uint32_t seed = (time.tv_usec ^ (time.tv_sec << 20)) & 0xffffffff;
+  srand(seed);
 
   dataset_t dataset = load_dataset(input_filepath_ptr, delimiter);
   normalize(&dataset);
@@ -193,26 +189,20 @@ int main (int argc, char *argv[])
       // k-fold cross validation
       for (int f = 0; f < k_fold; ++f)
       {
-
         load_cv_subsets(&dataset, &testing, &training, f, k_fold);
-
-        
-
+        // TODO
+        // ...
       }
-
-      
-
     }
 
-
-    
     free_subset(&training);
     free_subset(&testing);
   }
 
-  kmeans(&dataset, 2, max_iter, threshold);
 
+  kmeans(&dataset, 3, max_iter, threshold);
 
+  // TODO print to file
 
 
   free_dataset(&dataset);
@@ -225,12 +215,8 @@ int main (int argc, char *argv[])
  */
 float silhouette_analysis(dataset_t *testing, dataset_t *training, 
                       uint32_t num_kmeans, uint32_t num_clusters, 
-                      uint32_t max_iter, float threshold, uint32_t seed, 
-                      uint32_t print)
+                      uint32_t max_iter, float threshold, uint32_t print)
 {
-  srand(seed);
-
-
 
   if (print)
   {
@@ -249,23 +235,27 @@ void kmeans(dataset_t *d, uint32_t num_clusters, uint32_t max_iter,
             float threshold)
 {
   dataset_t centroids = init_centroids(num_clusters, d->attributes);
-  rand_centroids(d, &centroids);
+  rand_centroids(d, &centroids); // centroids are assigned to random points
 
   // array to store the index of the nearest cluster(aka centroid) for each 
   // data point
   uint32_t *data_labels = (uint32_t *) malloc(d->len * sizeof(uint32_t));
-  print_dataset_pretty(&centroids);
 
-  // do
-  // {
-    for (int i = 0; i < 2; ++i)
-    {
+  uint32_t has_converged = 0;
+  uint32_t i = 0;
+  do
+  {
     // assign label to each datapoint to indicate nearest cluster
     assign_nearest_cluster(d, data_labels, &centroids);
     // update the position of each centoid based on datapoint labels
-    update_centroid_position(d, data_labels, &centroids);
+    has_converged = update_centroid_position(d, data_labels, &centroids);
+    if (has_converged)
+    {
+      printf("converged after %d iterations\n", i + 1);
     }
-  // } while (0);
+
+    ++i;
+  } while ( !has_converged && (i < max_iter) );
   
 
 
@@ -539,35 +529,40 @@ void assign_nearest_cluster(dataset_t *d, uint32_t *data_labels,
   // start by assigning all data to the first(index 0) cluster
   memset(data_labels, 0, d->len * sizeof(uint32_t));
 
+  // #pragma omp parallel for
   for (uint32_t i = 0; i < d->len; ++i)
   {
-    float min_dist = euclidean_dist(d->data[i], centroids->data[0], d->len);
+    float min_dist = euclidean_dist(d->data[i], centroids->data[0], 
+                                    d->attributes);
     for (uint32_t j = 1; j < centroids->len; ++j)
     {
-      float tmp_dist = euclidean_dist(d->data[i], centroids->data[j], d->len);
+      float tmp_dist = euclidean_dist(d->data[i], centroids->data[j], 
+                                      d->attributes);
       if (tmp_dist < min_dist)
       {
+        min_dist = tmp_dist;
         data_labels[i] = j;
       }
     }
   }
-  
 } // end assign_nearest_cluster()
 
 
 /* Update the position of each centoid based on datapoint labels.
  * If a centroid is empty (no points belong to it) it will be re-initialized.
+ *
+ * Returns a bool to indicate convergence.
+ *   0 centroids have not converged. (centroid positions did change)
+ *   1 centroids have converged. (centroid positions did not change)
  */
-void update_centroid_position(dataset_t *d, uint32_t *data_labels, 
-                              dataset_t *centroids)
+uint32_t update_centroid_position(dataset_t *d, uint32_t *data_labels, 
+                                  dataset_t *centroids)
 {
-  // set all centroids to zero
+  // allocate space for new centroids
+  float **new_centroids = (float **) malloc(centroids->len * sizeof(float *));
   for (uint32_t i = 0; i < centroids->len; ++i)
-  {
-    for (uint32_t j = 0; j < centroids->attributes; ++j)
-    {
-      centroids->data[i][j] = 0;
-    }
+  { // it is important that new_centroids data is initialized to 0
+   new_centroids[i] = (float *) calloc(centroids->attributes, sizeof(float));
   }
 
   // sum the vectors and record the number of points that belong to each cluster
@@ -576,9 +571,9 @@ void update_centroid_position(dataset_t *d, uint32_t *data_labels,
   {
     for (uint32_t j = 0; j < d->attributes; ++j)
     {
-      centroids->data[data_labels[i]][j] += d->data[i][j];
-      record[data_labels[i]] += 1;
+      new_centroids[data_labels[i]][j] += d->data[i][j];
     }
+    record[data_labels[i]] += 1;
   }
 
   // finish computing the average position of each cluster
@@ -588,20 +583,48 @@ void update_centroid_position(dataset_t *d, uint32_t *data_labels,
     {
       for (uint32_t j = 0; j < centroids->attributes; ++j)
       {
-        centroids->data[i][j] = centroids->data[i][j] / ((float) record[i]);
+        new_centroids[i][j] = new_centroids[i][j] / ((float) record[i]);
       }
     }
     else
     { // centroid has no points that belong to it... reinitialize centroid to
       // a random datapoint
-      memcpy(centroids->data[i], 
+      memcpy(new_centroids[i], 
              d->data[rand() % d->len], 
              centroids->attributes * sizeof(float));
     }
   }
   
+
+  // compare old and new centroid values to determine if data has converged
+  uint32_t has_converged = 1;
+  for (uint32_t i = 0; i < centroids->len; ++i)
+  {
+    for (uint32_t j = 0; j < centroids->attributes; ++j)
+    {
+      if (centroids->data[i][j] != new_centroids[i][j])
+      {
+        has_converged = 0;
+        break;
+      }
+    }
+  }
+
+  free(centroids->data);
+  centroids->data = new_centroids;
+
   free(record);
+
+  return has_converged;
 } // end update_centroid_position()
+
+/* Calculates the sum of squared estimate of errors (SSE) between centroids and
+ * their points
+ */
+float calc_sse (dataset_t *d, uint32_t *data_labels, dataset_t *centroids)
+{
+
+} // end calc_sse()
 
 /* Prints a dataset with the specified delimiter.
  */
@@ -617,7 +640,7 @@ void print_dataset(dataset_t *d, char *delim)
     printf("%f\n", d->data[i][j]);
   }
   printf("\n");
-}
+} // end print_dataset()
 
 /* Prints a dataset in a pretty to read format.
  */
@@ -634,4 +657,4 @@ void print_dataset_pretty(dataset_t *d)
     printf("%f}\n", d->data[i][j]);
   }
   printf("\n");
-}
+} // end print_dataset_pretty()
