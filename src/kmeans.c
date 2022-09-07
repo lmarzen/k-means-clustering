@@ -8,14 +8,34 @@
 #include <omp.h>
 #include <unistd.h>
 
-/* Structure for storing raw data from parsed datasets
+/* Structure for storing 2d arrays of data
  */
 typedef struct dataset
 {
   uint32_t len; // length of the dataset (number of rows)
   uint32_t attributes; // number of attributes (number of columns)
-  float   **data;
+  float    **data;
 } dataset_t;
+
+/* Structure for storing 1d arrays of data that indicate what cluster each
+ * datapoint belongs to.
+ */
+typedef struct labels
+{
+  uint32_t len; // length of the dataset (number of rows)
+  uint32_t *data;
+} labels_t;
+
+/* Structure for storing results from kmeans.
+ */
+typedef struct results
+{
+  dataset_t centroids;
+  labels_t  labels;
+  float     sse; // sum of squared estimate of errors (SSE)
+} results_t;
+
+
 
 // function prototypes
 dataset_t load_dataset(char *filepath_ptr, char *delim);
@@ -26,17 +46,20 @@ void load_cv_subsets(dataset_t *src, dataset_t *testing, dataset_t *training,
                      uint32_t current_fold, uint32_t k_fold);
 void free_subset(dataset_t *d);
 float silhouette_analysis(dataset_t *testing, dataset_t *training, 
-                      uint32_t num_kmeans, uint32_t num_clusters, 
-                      uint32_t max_iter, float threshold, uint32_t print);
-void kmeans(dataset_t *d, uint32_t num_clusters, uint32_t max_iter, 
-            float threshold);
+                      uint32_t num_kmeans, uint32_t k, uint32_t max_iter, 
+                      float threshold, uint32_t print);
+results_t kmeans(dataset_t *d, uint32_t k, uint32_t max_iter, float threshold);
+void free_results(results_t *d);
 void normalize(dataset_t *d);
 dataset_t init_centroids(uint32_t k, uint32_t num_attributes);
 void rand_centroids(dataset_t *src, dataset_t *centroids);
-void assign_nearest_cluster(dataset_t *d, uint32_t *data_labels, 
+float sq_euclidean_dist(float *a, float *b, int dim);
+float euclidean_dist(float *a, float *b, int dim);
+void assign_nearest_cluster(dataset_t *d, labels_t *data_labels, 
                             dataset_t *centroids);
-uint32_t update_centroid_position(dataset_t *d, uint32_t *data_labels, 
+uint32_t update_centroid_position(dataset_t *d, labels_t *data_labels, 
                                   dataset_t *centroids);
+float calc_sse(dataset_t *d, labels_t *data_labels, dataset_t *centroids);
 void print_dataset(dataset_t *d, char *delim);
 void print_dataset_pretty(dataset_t *d);
 
@@ -200,7 +223,8 @@ int main(int argc, char *argv[])
   }
 
 
-  kmeans(&dataset, 3, max_iter, threshold);
+  results_t results = kmeans(&dataset, 3, max_iter, threshold);
+  free_results(&results);
 
   // TODO print to file
 
@@ -214,8 +238,8 @@ int main(int argc, char *argv[])
  * Returns the silhouette coeffient for the best clusters.
  */
 float silhouette_analysis(dataset_t *testing, dataset_t *training, 
-                      uint32_t num_kmeans, uint32_t num_clusters, 
-                      uint32_t max_iter, float threshold, uint32_t print)
+                      uint32_t num_kmeans, uint32_t k, uint32_t max_iter, 
+                      float threshold, uint32_t print)
 {
 
   if (print)
@@ -227,28 +251,32 @@ float silhouette_analysis(dataset_t *testing, dataset_t *training,
 } // end silhouette_analysis()
 
 
-/* Executes kmeans for num_kmeans times.
+/* Executes the kmeans algorithm until convergence or max_iter.
  * 
- * Returns the silhouette coeffient for the best clusters.
+ * Returns a results_t containing of centroids, data labels(what cluster each
+ * data point belongs to) and the sum of squared estimate of errors (SSE).
  */
-void kmeans(dataset_t *d, uint32_t num_clusters, uint32_t max_iter, 
-            float threshold)
+results_t kmeans(dataset_t *d, uint32_t k, uint32_t max_iter, 
+                 float threshold)
 {
-  dataset_t centroids = init_centroids(num_clusters, d->attributes);
-  rand_centroids(d, &centroids); // centroids are assigned to random points
+  results_t r = {};
+  r.centroids = init_centroids(k, d->attributes);
+  rand_centroids(d, &r.centroids); // centroids are assigned to random 
+                                         // data points
 
   // array to store the index of the nearest cluster(aka centroid) for each 
   // data point
-  uint32_t *data_labels = (uint32_t *) malloc(d->len * sizeof(uint32_t));
+  r.labels.data = (uint32_t *) malloc(d->len * sizeof(uint32_t));
+  r.labels.len = d->len;
 
   uint32_t has_converged = 0;
   uint32_t i = 0;
   do
   {
     // assign label to each datapoint to indicate nearest cluster
-    assign_nearest_cluster(d, data_labels, &centroids);
+    assign_nearest_cluster(d, &r.labels, &r.centroids);
     // update the position of each centoid based on datapoint labels
-    has_converged = update_centroid_position(d, data_labels, &centroids);
+    has_converged = update_centroid_position(d, &r.labels, &r.centroids);
     if (has_converged)
     {
       printf("converged after %d iterations\n", i + 1);
@@ -256,14 +284,23 @@ void kmeans(dataset_t *d, uint32_t num_clusters, uint32_t max_iter,
 
     ++i;
   } while ( !has_converged && (i < max_iter) );
+
+  r.sse = calc_sse(d, &r.labels, &r.centroids);
   
-
-
-
-
-  free(data_labels);
-  free_dataset(&centroids);
+  return r;
 } // end kmeans()
+
+
+/* Releases all resources stored used by results_t.
+ */
+void free_results(results_t *r)
+{
+  free_dataset(&r->centroids);
+  free(r->labels.data);
+  r->labels.len = 0;
+  r->sse = 0;
+  return;
+} // end free_results()
 
 
 /* This function loads a dataset. Returns a dataset_t that must be freed by
@@ -507,41 +544,51 @@ void rand_centroids(dataset_t *src, dataset_t *centroids)
 
 
 /* Returns the (squared) Euclidean distance between two points, a and b, of 
- * arbitrary dimension, dim. Answer is left squared because kmeans only cares
- * about relative distance so it is a waste of time to compute the sqrt.
+ * arbitrary dimension, dim. 
+ *
+ * NOTE: Answer is left squared because kmeans only cares about relative 
+ *       distance so it is a waste of resources to compute the sqrt.
  */
-float euclidean_dist(float *a, float *b, int dim)
+float sq_euclidean_dist(float *a, float *b, int dim)
 {
   float sum = 0.0;
   for (uint32_t i = 0; i < dim; i++)
   {
     sum += pow(a[i] - b[i], 2);
   }
-  return sum; // sqrt(sum)
+  return sum; // sqrt(sum) would be the true Euclidean distance
+} // end sq_euclidean_dist()
+
+/* Returns the Euclidean distance between two points, a and b, of 
+ * arbitrary dimension, dim.
+ */
+float euclidean_dist(float *a, float *b, int dim)
+{
+  return sqrt(sq_euclidean_dist(a, b, dim));
 } // end euclidean_dist()
 
 
 /* Assign label to each datapoint to indicate nearest cluster.
  */
-void assign_nearest_cluster(dataset_t *d, uint32_t *data_labels, 
+void assign_nearest_cluster(dataset_t *d, labels_t *data_labels, 
                             dataset_t *centroids)
 {
   // start by assigning all data to the first(index 0) cluster
-  memset(data_labels, 0, d->len * sizeof(uint32_t));
+  memset(data_labels->data, 0, d->len * sizeof(uint32_t));
 
   // #pragma omp parallel for
   for (uint32_t i = 0; i < d->len; ++i)
   {
-    float min_dist = euclidean_dist(d->data[i], centroids->data[0], 
-                                    d->attributes);
+    float min_dist = sq_euclidean_dist(d->data[i], centroids->data[0], 
+                                       d->attributes);
     for (uint32_t j = 1; j < centroids->len; ++j)
     {
-      float tmp_dist = euclidean_dist(d->data[i], centroids->data[j], 
-                                      d->attributes);
+      float tmp_dist = sq_euclidean_dist(d->data[i], centroids->data[j], 
+                                         d->attributes);
       if (tmp_dist < min_dist)
       {
         min_dist = tmp_dist;
-        data_labels[i] = j;
+        data_labels->data[i] = j;
       }
     }
   }
@@ -555,7 +602,7 @@ void assign_nearest_cluster(dataset_t *d, uint32_t *data_labels,
  *   0 centroids have not converged. (centroid positions did change)
  *   1 centroids have converged. (centroid positions did not change)
  */
-uint32_t update_centroid_position(dataset_t *d, uint32_t *data_labels, 
+uint32_t update_centroid_position(dataset_t *d, labels_t *data_labels, 
                                   dataset_t *centroids)
 {
   // allocate space for new centroids
@@ -571,9 +618,9 @@ uint32_t update_centroid_position(dataset_t *d, uint32_t *data_labels,
   {
     for (uint32_t j = 0; j < d->attributes; ++j)
     {
-      new_centroids[data_labels[i]][j] += d->data[i][j];
+      new_centroids[data_labels->data[i]][j] += d->data[i][j];
     }
-    record[data_labels[i]] += 1;
+    record[data_labels->data[i]] += 1;
   }
 
   // finish computing the average position of each cluster
@@ -619,11 +666,17 @@ uint32_t update_centroid_position(dataset_t *d, uint32_t *data_labels,
 } // end update_centroid_position()
 
 /* Calculates the sum of squared estimate of errors (SSE) between centroids and
- * their points
+ * their points.
  */
-float calc_sse (dataset_t *d, uint32_t *data_labels, dataset_t *centroids)
+float calc_sse(dataset_t *d, labels_t *data_labels, dataset_t *centroids)
 {
-
+  float sum = 0.0;
+  for (uint32_t i = 0; i < d->len; i++)
+  {
+    sum += sq_euclidean_dist(d->data[i], centroids->data[data_labels->data[i]], 
+                             d->attributes);
+  }
+  return sum;
 } // end calc_sse()
 
 /* Prints a dataset with the specified delimiter.
