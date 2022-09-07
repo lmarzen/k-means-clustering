@@ -37,6 +37,8 @@ void assign_nearest_cluster(dataset_t *d, uint32_t *data_labels,
                             dataset_t *centroids);
 void update_centroid_position(dataset_t *d, uint32_t *data_labels, 
                               dataset_t *centroids);
+void print_dataset(dataset_t *d, char *delim);
+void print_dataset_pretty(dataset_t *d);
 
 
 int main (int argc, char *argv[])
@@ -252,14 +254,18 @@ void kmeans(dataset_t *d, uint32_t num_clusters, uint32_t max_iter,
   // array to store the index of the nearest cluster(aka centroid) for each 
   // data point
   uint32_t *data_labels = (uint32_t *) malloc(d->len * sizeof(uint32_t));
+  print_dataset_pretty(&centroids);
 
-  do
-  {
+  // do
+  // {
+    for (int i = 0; i < 2; ++i)
+    {
     // assign label to each datapoint to indicate nearest cluster
     assign_nearest_cluster(d, data_labels, &centroids);
     // update the position of each centoid based on datapoint labels
     update_centroid_position(d, data_labels, &centroids);
-  } while (0);
+    }
+  // } while (0);
   
 
 
@@ -565,7 +571,7 @@ void update_centroid_position(dataset_t *d, uint32_t *data_labels,
   }
 
   // sum the vectors and record the number of points that belong to each cluster
-  uint32_t *record = (uint32_t *) malloc(centroids->len * sizeof(uint32_t));
+  uint32_t *record = (uint32_t *) calloc(centroids->len, sizeof(uint32_t));
   for (uint32_t i = 0; i < d->len; ++i)
   {
     for (uint32_t j = 0; j < d->attributes; ++j)
@@ -596,3 +602,36 @@ void update_centroid_position(dataset_t *d, uint32_t *data_labels,
   
   free(record);
 } // end update_centroid_position()
+
+/* Prints a dataset with the specified delimiter.
+ */
+void print_dataset(dataset_t *d, char *delim)
+{
+  for (uint32_t i = 0; i < d->len; ++i)
+  {
+    uint32_t j;
+    for (j = 0; j < d->attributes - 1; ++j)
+    {
+      printf("%f%s", d->data[i][j], delim);
+    }
+    printf("%f\n", d->data[i][j]);
+  }
+  printf("\n");
+}
+
+/* Prints a dataset in a pretty to read format.
+ */
+void print_dataset_pretty(dataset_t *d)
+{
+  for (uint32_t i = 0; i < d->len; ++i)
+  {
+    uint32_t j;
+    putchar('{');
+    for (j = 0; j < d->attributes - 1; ++j)
+    {
+      printf("%f, ", d->data[i][j]);
+    }
+    printf("%f}\n", d->data[i][j]);
+  }
+  printf("\n");
+}
