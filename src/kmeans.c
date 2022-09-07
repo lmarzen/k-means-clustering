@@ -7,6 +7,8 @@
 #include <omp.h>
 #include <unistd.h>
 
+/* Structure for storing raw data from parsed datasets
+ */
 typedef struct dataset
 {
   uint32_t len; // length of the dataset (number of rows)
@@ -22,6 +24,19 @@ void init_cv_subsets(dataset_t *src, dataset_t *testing, dataset_t *training,
 void load_cv_subsets(dataset_t *src, dataset_t *testing, dataset_t *training, 
                      uint32_t current_fold, uint32_t k_fold);
 void free_subset(dataset_t *d);
+float silhouette_analysis(dataset_t *testing, dataset_t *training, 
+                      uint32_t num_kmeans, uint32_t num_clusters, 
+                      uint32_t max_iter, float threshold, uint32_t seed, 
+                      uint32_t print);
+void kmeans(dataset_t *d, uint32_t num_clusters, uint32_t max_iter, 
+            float threshold);
+void normalize(dataset_t *d);
+dataset_t init_centroids(uint32_t k, uint32_t num_attributes);
+void rand_centroids(dataset_t *src, dataset_t *centroids);
+void assign_nearest_cluster(dataset_t *d, uint32_t *data_labels, 
+                            dataset_t *centroids);
+void update_centroid_position(dataset_t *d, uint32_t *data_labels, 
+                              dataset_t *centroids);
 
 
 int main (int argc, char *argv[])
@@ -159,9 +174,8 @@ int main (int argc, char *argv[])
   }
 
   dataset_t dataset = load_dataset(input_filepath_ptr, delimiter);
-  // dataset_t testing = {};
-  //   dataset_t training  = {};
-  //   init_cv_subsets(&dataset, &testing, &training, k_fold);
+  normalize(&dataset);
+
   if (k == 0)
   { // user did not specify a value for k, so silhouette coefficients will be
     // used to select an optimal k between k_min and k_max.
@@ -172,15 +186,13 @@ int main (int argc, char *argv[])
 
     for (k = k_min; k <= k_max; ++k)
     {
-      printf("Solving for k = %d\n", k);
+      printf("Performing silhouette analysis for k = %d\n", k);
 
       // k-fold cross validation
       for (int f = 0; f < k_fold; ++f)
       {
 
         load_cv_subsets(&dataset, &testing, &training, f, k_fold);
-        printf("%3f %3f %3f\n", dataset.data[0][0], testing.data[0][0], training.data[0][0]);
-        
 
         
 
@@ -189,17 +201,73 @@ int main (int argc, char *argv[])
       
 
     }
+
+
     
     free_subset(&training);
     free_subset(&testing);
   }
 
+  kmeans(&dataset, 2, max_iter, threshold);
+
+
+
 
   free_dataset(&dataset);
-
 } // end main()
 
 
+/* Executes kmeans for num_kmeans times.
+ * 
+ * Returns the silhouette coeffient for the best clusters.
+ */
+float silhouette_analysis(dataset_t *testing, dataset_t *training, 
+                      uint32_t num_kmeans, uint32_t num_clusters, 
+                      uint32_t max_iter, float threshold, uint32_t seed, 
+                      uint32_t print)
+{
+  srand(seed);
+
+
+
+  if (print)
+  {
+    // print best clusters to terminal
+    // write output files
+  }
+  return 0.0;
+} // end silhouette_analysis()
+
+
+/* Executes kmeans for num_kmeans times.
+ * 
+ * Returns the silhouette coeffient for the best clusters.
+ */
+void kmeans(dataset_t *d, uint32_t num_clusters, uint32_t max_iter, 
+            float threshold)
+{
+  dataset_t centroids = init_centroids(num_clusters, d->attributes);
+  rand_centroids(d, &centroids);
+
+  // array to store the index of the nearest cluster(aka centroid) for each 
+  // data point
+  uint32_t *data_labels = (uint32_t *) malloc(d->len * sizeof(uint32_t));
+
+  do
+  {
+    // assign label to each datapoint to indicate nearest cluster
+    assign_nearest_cluster(d, data_labels, &centroids);
+    // update the position of each centoid based on datapoint labels
+    update_centroid_position(d, data_labels, &centroids);
+  } while (0);
+  
+
+
+
+
+  free(data_labels);
+  free_dataset(&centroids);
+} // end kmeans()
 
 
 /* This function loads a dataset. Returns a dataset_t that must be freed by
@@ -222,7 +290,7 @@ dataset_t load_dataset(char *filepath_ptr, char *delim)
     }
     else 
     {
-      printf("Loading dataset from file: %s\n", filepath_ptr);
+      printf("Loading dataset from file: %s", filepath_ptr);
     }
 
     char buf[1024] = {};
@@ -267,11 +335,12 @@ dataset_t load_dataset(char *filepath_ptr, char *delim)
     return d;
 } // end load_dataset()
 
+
 /* Frees the dynamically allocated data in dataset_t.
  */
 void free_dataset(dataset_t *d)
 {
-  for (uint32_t i = 0; i < d->attributes; ++i)
+  for (uint32_t i = 0; i < d->len; ++i)
   {
     free(d->data[i]);
   }
@@ -282,6 +351,7 @@ void free_dataset(dataset_t *d)
   d->data = NULL;
   return;
 } // end free_dataset()
+
 
 /* Allocates the space for the testing and training data subsets. Used for 
  * k-fold cross-validation. Free by calling free_subset(...).
@@ -301,6 +371,7 @@ void init_cv_subsets(dataset_t *src, dataset_t *testing, dataset_t *training,
 
   return;
 } // end init_cv_subsets()
+
 
 /* Copies pointers from source dataset, d, into testing and training subsets for
  * the current fold iteration. Used for k-fold cross-validation.
@@ -327,10 +398,13 @@ void load_cv_subsets(dataset_t *src, dataset_t *testing, dataset_t *training,
   // copy all of testing data: O
   memcpy(testing->data, testing_start, fold_sz);
   // copy the remaining data in source to the remaining space in training: X
-  memcpy(training->data + (current_fold * fold_len), testing_start + fold_sz, (src->len * sizeof(float)) - fold_sz - testing_offset);
+  memcpy(training->data + (current_fold * fold_len), 
+         testing_start + testing->len, 
+         (src->len * sizeof(float *)) - fold_sz - testing_offset);
 
   return;
 } // end load_cv_subsets()
+
 
 /* Frees the dynamically allocated data in dataset_t, specifically for subsets
  * to avoid double free.
@@ -340,7 +414,7 @@ void free_subset(dataset_t *d)
   // only a single array of pointers is allocated for the purpose of the
   // subsets, the real data is in the source dataset and should be freed by
   // calling free_dataset
-  //free(d->data);
+  free(d->data);
 
   d->len = 0;
   d->attributes = 0;
@@ -349,31 +423,176 @@ void free_subset(dataset_t *d)
 } // end free_subset()
 
 
-// TODO maybe?
 /* Normalizes data points to values between 0 and 1.
  */
-void normalize_dataset(dataset_t *d)
+void normalize(dataset_t *d)
 {
   uint32_t i, j;
 
-  printf("Normalizing the data...\n");
+  printf("Normalizing the dataset...\n");
   
-  // find max for each attribute
   float max[d->attributes];
   memset(max, 0, d->attributes * sizeof(float));
-
-  for(i = 0; i < d->len; i++) {
-    for(j = 0; j < d->attributes; j++) {
-      if(max[j] < d->data[i][j])
+  // find max for each attribute
+  for (i = 0; i < d->len; i++)
+  {
+    for (j = 0; j < d->attributes; j++)
+    {
+      if (max[j] < d->data[i][j])
       {
         max[j] = d->data[i][j];
       }
     }
   }
   // Normalize the data by dividing each value by the max value of the column
-  for(i = 0; i < d->len; i++) {
-    for(j = 0; j < d->attributes; j++) {
-        d->data[i][j] = d->data[i][j] / max[j];
+  for (i = 0; i < d->len; i++)
+  {
+    for (j = 0; j < d->attributes; j++)
+    {
+      d->data[i][j] = d->data[i][j] / max[j];
     }
   }
-} // end normalize_dataset()
+
+} // end normalize()
+
+
+/* Allocates space for k centroids with the specified number of attributes.
+ * Free centroids by calling free_dataset(...).
+ */
+dataset_t init_centroids(uint32_t k, uint32_t num_attributes)
+{
+  dataset_t centroids = {};
+  centroids.len = k;
+  centroids.attributes = num_attributes;
+  centroids.data = (float **) malloc(k * sizeof(float *));
+  for (uint32_t i = 0; i < k; ++i)
+  {
+    centroids.data[i] = (float *) malloc(num_attributes * sizeof(float));
+  }
+  return centroids;
+} // end init_centroids()
+
+
+/* Selects random points and copys them to centroids.
+ * Assumes that srand() has been called and that centroids has been initialized
+ * by a previous call to init_centroids.
+ */
+void rand_centroids(dataset_t *src, dataset_t *centroids)
+{
+  // points must be selected without replacement, so we must keep track of 
+  // selected points
+  uint32_t *rand_indices = malloc(centroids->len * sizeof(uint32_t));
+
+  for (uint32_t i = 0; i < centroids->len; ++i)
+  {
+    uint32_t valid_index = 0;
+    while (!valid_index)
+    {
+      rand_indices[i] = rand() % src->len;
+      valid_index = 1;
+      // check if index has been used before, if it has index is not valid
+      for (uint32_t j = 0; j < i; ++j)
+      {
+        if (rand_indices[i] == rand_indices[j])
+        {
+          valid_index = 0;
+          break;
+        }
+      }
+    }
+
+    memcpy(centroids->data[i], 
+           src->data[rand_indices[i]], 
+           centroids->attributes * sizeof(float));
+  }
+
+  free(rand_indices);
+} // end rand_centroids()
+
+
+/* Returns the (squared) Euclidean distance between two points, a and b, of 
+ * arbitrary dimension, dim. Answer is left squared because kmeans only cares
+ * about relative distance so it is a waste of time to compute the sqrt.
+ */
+float euclidean_dist(float *a, float *b, int dim)
+{
+  float sum = 0.0;
+  for (uint32_t i = 0; i < dim; i++)
+  {
+    sum += pow(a[i] - b[i], 2);
+  }
+  return sum; // sqrt(sum)
+} // end euclidean_dist()
+
+
+/* Assign label to each datapoint to indicate nearest cluster.
+ */
+void assign_nearest_cluster(dataset_t *d, uint32_t *data_labels, 
+                            dataset_t *centroids)
+{
+  // start by assigning all data to the first(index 0) cluster
+  memset(data_labels, 0, d->len * sizeof(uint32_t));
+
+  for (uint32_t i = 0; i < d->len; ++i)
+  {
+    float min_dist = euclidean_dist(d->data[i], centroids->data[0], d->len);
+    for (uint32_t j = 1; j < centroids->len; ++j)
+    {
+      float tmp_dist = euclidean_dist(d->data[i], centroids->data[j], d->len);
+      if (tmp_dist < min_dist)
+      {
+        data_labels[i] = j;
+      }
+    }
+  }
+  
+} // end assign_nearest_cluster()
+
+
+/* Update the position of each centoid based on datapoint labels.
+ * If a centroid is empty (no points belong to it) it will be re-initialized.
+ */
+void update_centroid_position(dataset_t *d, uint32_t *data_labels, 
+                              dataset_t *centroids)
+{
+  // set all centroids to zero
+  for (uint32_t i = 0; i < centroids->len; ++i)
+  {
+    for (uint32_t j = 0; j < centroids->attributes; ++j)
+    {
+      centroids->data[i][j] = 0;
+    }
+  }
+
+  // sum the vectors and record the number of points that belong to each cluster
+  uint32_t *record = (uint32_t *) malloc(centroids->len * sizeof(uint32_t));
+  for (uint32_t i = 0; i < d->len; ++i)
+  {
+    for (uint32_t j = 0; j < d->attributes; ++j)
+    {
+      centroids->data[data_labels[i]][j] += d->data[i][j];
+      record[data_labels[i]] += 1;
+    }
+  }
+
+  // finish computing the average position of each cluster
+  for (uint32_t i = 0; i < centroids->len; ++i)
+  {
+    if (record[i] > 0)
+    {
+      for (uint32_t j = 0; j < centroids->attributes; ++j)
+      {
+        centroids->data[i][j] = centroids->data[i][j] / ((float) record[i]);
+      }
+    }
+    else
+    { // centroid has no points that belong to it... reinitialize centroid to
+      // a random datapoint
+      memcpy(centroids->data[i], 
+             d->data[rand() % d->len], 
+             centroids->attributes * sizeof(float));
+    }
+  }
+  
+  free(record);
+} // end update_centroid_position()
