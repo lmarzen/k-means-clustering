@@ -197,34 +197,40 @@ int main(int argc, char *argv[])
     dataset_t testing = {};
     dataset_t training  = {};
     init_cv_subsets(&dataset, &testing, &training, k_fold);
+    float best_sil = -1.0;
 
-    for (k = k_min; k <= k_max; ++k)
+    puts("----------------------");
+    for (uint32_t ki = k_min; ki <= k_max; ++ki)
     {
-      printf("Performing silhouette analysis for k = %d\n", k);
+      printf("Performing analysis for k = %d\n", ki);
+      float mean_sil = 0.0;
 
       // k-fold cross validation
       for (int f = 0; f < k_fold; ++f)
       {
         load_cv_subsets(&dataset, &testing, &training, f, k_fold);
-        // TODO
-        // ...
+        mean_sil += silhouette_analysis(&testing, &training, num_kmeans, ki, 
+                                        max_iter, 0);
       }
+
+      mean_sil = mean_sil / k_fold;
+      if (mean_sil > best_sil)
+      {
+        best_sil = mean_sil;
+        k = ki;
+      }
+
+      printf("Silhouette : %f\n", mean_sil);
+      puts("----------------------");
     }
 
     free_subset(&training);
     free_subset(&testing);
   }
 
-  float sil = silhouette_analysis(&dataset, &dataset, num_kmeans, k, max_iter, 1);
-  printf("sil: %f", sil);
-  
-  
-
-  // results_t results = kmeans(&dataset, 3, max_iter);
-  // free_results(&results);
-
-  // TODO print to file
-
+  // run analysis on entire dataset
+  printf("\nPerforming analysis for k = %d\n", k);
+  silhouette_analysis(&dataset, &dataset, num_kmeans, k, max_iter, 1);
 
   free_dataset(&dataset);
 } // end main()
@@ -272,6 +278,10 @@ float silhouette_analysis(dataset_t *testing, dataset_t *training,
 
   if (print)
   {
+    puts("Centroids:");
+    print_dataset_pretty(&best_results.centroids);
+    puts("Saving results to disk...");
+    // TODO
     // print best clusters to terminal
     // write output files
   }
@@ -307,6 +317,11 @@ results_t kmeans(dataset_t *d, uint32_t k, uint32_t max_iter)
     has_converged = update_centroid_position(d, &r.labels, &r.centroids);
     ++i;
   } while ( !has_converged && (i < max_iter) );
+
+  // if (!has_converged)
+  // {
+  //   printf("Warning: kmeans did not converage after %d iterations.\n", max_iter);
+  // }
 
   r.sse = calc_sse(d, &r.labels, &r.centroids);
   
@@ -622,6 +637,7 @@ void assign_nearest_cluster(dataset_t *d, labels_t *data_labels,
   // start by assigning all data to the first(index 0) cluster
   memset(data_labels->data, 0, d->len * sizeof(uint32_t));
 
+  #pragma omp parallel for
   for (uint32_t i = 0; i < d->len; ++i)
   {
     float min_dist = sq_euclidean_dist(d->data[i], centroids->data[0], 
@@ -637,6 +653,7 @@ void assign_nearest_cluster(dataset_t *d, labels_t *data_labels,
       }
     }
   }
+  return;
 } // end assign_nearest_cluster()
 
 
@@ -659,6 +676,7 @@ uint32_t update_centroid_position(dataset_t *d, labels_t *data_labels,
 
   // sum the vectors and record the number of points that belong to each cluster
   uint32_t *record = (uint32_t *) calloc(centroids->len, sizeof(uint32_t));
+  #pragma omp parallel for
   for (uint32_t i = 0; i < d->len; ++i)
   {
     for (uint32_t j = 0; j < d->attributes; ++j)
@@ -813,5 +831,4 @@ void print_dataset_pretty(dataset_t *d)
     }
     printf("%f}\n", d->data[i][j]);
   }
-  printf("\n");
 } // end print_dataset_pretty()
