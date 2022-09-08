@@ -215,9 +215,6 @@ int main(int argc, char *argv[])
     free_subset(&testing);
   }
 
-
-
-
   float sil = silhouette_analysis(&dataset, &dataset, num_kmeans, k, max_iter, 1);
   printf("sil: %f", sil);
   
@@ -245,10 +242,12 @@ float silhouette_analysis(dataset_t *testing, dataset_t *training,
 
   best_results = kmeans(training, k, max_iter);;
 
-  #pragma omp parallel for
+  #pragma omp parallel for private(tmp_results)
   for (uint32_t i = 1; i < num_kmeans; ++i)
   {
     tmp_results = kmeans(training, k, max_iter);
+    
+    #pragma omp critical
     if (tmp_results.sse < best_results.sse)
     {
       free_results(&best_results);
@@ -495,21 +494,44 @@ void normalize(dataset_t *d)
   {
     for (j = 0; j < d->attributes; j++)
     {
-      if (max[j] < d->data[i][j])
+      if (d->data[i][j] > max[j])
       {
         max[j] = d->data[i][j];
       }
     }
   }
-  // Normalize the data by dividing each value by the max value of the column
+
+  float min[d->attributes];
+  memcpy(min, max, d->attributes * sizeof(float));
+  // find min for each attribute
   for (i = 0; i < d->len; i++)
   {
     for (j = 0; j < d->attributes; j++)
     {
-      d->data[i][j] = d->data[i][j] / max[j];
+      if (d->data[i][j] < min[j])
+      {
+        min[j] = d->data[i][j];
+      }
     }
   }
 
+  // calculate the range of each attribute
+  float range[d->attributes];
+  for (i = 0; i < d->attributes; i++)
+  {
+    range[i] = max[i] - min[i];
+  }
+
+  // Normalize the data... xnormalized = (x - xminimum) / range of x
+  for (i = 0; i < d->len; i++)
+  {
+    for (j = 0; j < d->attributes; j++)
+    {
+      d->data[i][j] = (d->data[i][j] - min[j]) / range[j];
+    }
+  }
+
+  return;
 } // end normalize()
 
 
@@ -738,7 +760,7 @@ float calc_silhouette(dataset_t *testing, labels_t *test_labels,
         C += 1;
       }
     }
-    float a_i = dist / ((float) (C - 1));
+    float a_i = dist / ((float) (C));
 
     float b_i = -1;
     for (uint32_t k = 0; k < centroids->len; ++k)
