@@ -47,8 +47,8 @@ void load_cv_subsets(dataset_t *src, dataset_t *testing, dataset_t *training,
 void free_subset(dataset_t *d);
 float silhouette_analysis(dataset_t *testing, dataset_t *training, 
                       uint32_t num_kmeans, uint32_t k, uint32_t max_iter, 
-                      float threshold, uint32_t print);
-results_t kmeans(dataset_t *d, uint32_t k, uint32_t max_iter, float threshold);
+                      uint32_t print);
+results_t kmeans(dataset_t *d, uint32_t k, uint32_t max_iter);
 void free_results(results_t *d);
 void normalize(dataset_t *d);
 dataset_t init_centroids(uint32_t k, uint32_t num_attributes);
@@ -60,6 +60,8 @@ void assign_nearest_cluster(dataset_t *d, labels_t *data_labels,
 uint32_t update_centroid_position(dataset_t *d, labels_t *data_labels, 
                                   dataset_t *centroids);
 float calc_sse(dataset_t *d, labels_t *data_labels, dataset_t *centroids);
+float calc_silhouette(dataset_t *testing, labels_t *test_labels, 
+                      dataset_t *centroids);
 void print_dataset(dataset_t *d, char *delim);
 void print_dataset_pretty(dataset_t *d);
 
@@ -75,7 +77,6 @@ int main(int argc, char *argv[])
                  // determine optimal k from k_min to k_max
   int32_t k_min = 2;
   int32_t k_max = 10;
-  float   threshold = 1e-14; // allowed error between iterations for convergence
   int32_t max_iter = 100; // maximum allowed iterations in each k-means
   int32_t num_kmeans = 100; // number of parallel executed k-means
   int32_t k_fold = 10; // number of folds for cross validation
@@ -83,7 +84,7 @@ int main(int argc, char *argv[])
   // process option flags
   uint32_t c = 0;
   opterr = 0;
-  while ((c = getopt (argc, argv, "i:d:k:M:m:e:b:n:f:t:")) != -1)
+  while ((c = getopt (argc, argv, "i:d:k:M:m:b:n:f:t:")) != -1)
   {
     switch (c) 
     {
@@ -114,14 +115,6 @@ int main(int argc, char *argv[])
         k_min = atoi(optarg);
       } else {
         printf("Error: k_min must be a postive integer.\n");
-        return 1;
-      }
-      break;
-    case 'e':
-      if (atof(optarg) >= 0.0) {
-        threshold = atof(optarg);
-      } else {
-        printf("Error: threshold for convergence must be a postive number.\n");
         return 1;
       }
       break;
@@ -223,8 +216,15 @@ int main(int argc, char *argv[])
   }
 
 
-  results_t results = kmeans(&dataset, 3, max_iter, threshold);
-  free_results(&results);
+
+
+  float sil = silhouette_analysis(&dataset, &dataset, num_kmeans, k, max_iter, 1);
+  printf("sil: %f", sil);
+  
+  
+
+  // results_t results = kmeans(&dataset, 3, max_iter);
+  // free_results(&results);
 
   // TODO print to file
 
@@ -238,16 +238,45 @@ int main(int argc, char *argv[])
  * Returns the silhouette coeffient for the best clusters.
  */
 float silhouette_analysis(dataset_t *testing, dataset_t *training, 
-                      uint32_t num_kmeans, uint32_t k, uint32_t max_iter, 
-                      float threshold, uint32_t print)
+                          uint32_t num_kmeans, uint32_t k, uint32_t max_iter, 
+                          uint32_t print)
 {
+  results_t best_results, tmp_results;
+
+  best_results = kmeans(training, k, max_iter);;
+
+  for (uint32_t i = 1; i < num_kmeans; ++i)
+  {
+    tmp_results = kmeans(training, k, max_iter);
+    if (tmp_results.sse < best_results.sse)
+    {
+      free_results(&best_results);
+      best_results = tmp_results;
+    }
+    else
+    {
+      free_results(&tmp_results);
+    }
+  }
+
+  // evaluate results agains testing set
+  labels_t test_data_labels;
+  test_data_labels.data = (uint32_t *) malloc(testing->len * sizeof(uint32_t));
+  test_data_labels.len = testing->len;
+  assign_nearest_cluster(testing, &test_data_labels, &best_results.centroids);
+  float sil = calc_silhouette(testing, &test_data_labels, 
+                              &best_results.centroids);
+  free(test_data_labels.data);
+
+
 
   if (print)
   {
     // print best clusters to terminal
     // write output files
   }
-  return 0.0;
+  free_results(&best_results);
+  return sil;
 } // end silhouette_analysis()
 
 
@@ -256,8 +285,7 @@ float silhouette_analysis(dataset_t *testing, dataset_t *training,
  * Returns a results_t containing of centroids, data labels(what cluster each
  * data point belongs to) and the sum of squared estimate of errors (SSE).
  */
-results_t kmeans(dataset_t *d, uint32_t k, uint32_t max_iter, 
-                 float threshold)
+results_t kmeans(dataset_t *d, uint32_t k, uint32_t max_iter)
 {
   results_t r = {};
   r.centroids = init_centroids(k, d->attributes);
@@ -303,7 +331,7 @@ void free_results(results_t *r)
 } // end free_results()
 
 
-/* This function loads a dataset. Returns a dataset_t that must be freed by
+/* This function parses a data file. Returns a dataset_t that must be freed by
  * calling free_dataset(...).
  *
  * Assumes data begins on first line and consists of attributes represented by 
@@ -665,6 +693,7 @@ uint32_t update_centroid_position(dataset_t *d, labels_t *data_labels,
   return has_converged;
 } // end update_centroid_position()
 
+
 /* Calculates the sum of squared estimate of errors (SSE) between centroids and
  * their points.
  */
@@ -678,6 +707,63 @@ float calc_sse(dataset_t *d, labels_t *data_labels, dataset_t *centroids)
   }
   return sum;
 } // end calc_sse()
+
+
+/* Calculates and returns the silhouette coeffient.
+ *
+ * s_i = (b_i - a_i) / max(a_i, b_i)
+ * 
+ * s_i : is the silhouette coeffient for a datapoint
+ * a_i : is the intra cluster distance defined as the average distance from all 
+ *       data points in the same cluster 
+ * b_i : is the inter cluster distance defined as the average distance from all 
+ *       data points in the closest cluster
+ * 
+ * The coefficient can take values in the interval [-1, 1].
+ *   0 : the sample is very close to the neighboring clusters
+ *   1 : the sample is far away from the neighboring clusters
+ *  -1 : the sample is assigned to the wrong clusters
+ */
+float calc_silhouette(dataset_t *testing, labels_t *test_labels, 
+                      dataset_t *centroids)
+{
+  float mean_sil = 0.0;
+
+  for (uint32_t i = 0; i < testing->len; ++i)
+  {
+    uint32_t C = 0; // number of datapoints in the same cluster
+    float dist = 0.0;
+    for (uint32_t j = 0; j < test_labels->len; ++j)
+    {
+      if ( (i != j) && (test_labels->data[i] == test_labels->data[j]) )
+      {
+        dist += euclidean_dist(testing->data[i], testing->data[j], 
+                               testing->attributes);
+        C += 1;
+      }
+    }
+    float a_i = dist / ((float) (C - 1));
+
+    float b_i = -1;
+    for (uint32_t k = 0; k < centroids->len; ++k)
+    { // find closest cluster (that is not its own)
+      float tmp_dist = euclidean_dist(centroids->data[k], testing->data[i], 
+                                      centroids->attributes);
+      if ((tmp_dist < b_i || b_i < 0.0) && k != test_labels->data[i])
+      {
+        b_i = tmp_dist;
+      }
+    }
+
+
+    float s_i = (b_i - a_i) / fmax(a_i, b_i);
+    mean_sil += s_i;
+  }
+
+  mean_sil = mean_sil / ((float) testing->len);
+
+  return mean_sil;
+} // calc_silhouette()
 
 /* Prints a dataset with the specified delimiter.
  */
