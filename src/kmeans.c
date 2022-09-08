@@ -245,6 +245,7 @@ float silhouette_analysis(dataset_t *testing, dataset_t *training,
 
   best_results = kmeans(training, k, max_iter);;
 
+  #pragma omp parallel for
   for (uint32_t i = 1; i < num_kmeans; ++i)
   {
     tmp_results = kmeans(training, k, max_iter);
@@ -305,11 +306,6 @@ results_t kmeans(dataset_t *d, uint32_t k, uint32_t max_iter)
     assign_nearest_cluster(d, &r.labels, &r.centroids);
     // update the position of each centoid based on datapoint labels
     has_converged = update_centroid_position(d, &r.labels, &r.centroids);
-    if (has_converged)
-    {
-      printf("converged after %d iterations\n", i + 1);
-    }
-
     ++i;
   } while ( !has_converged && (i < max_iter) );
 
@@ -351,7 +347,7 @@ dataset_t load_dataset(char *filepath_ptr, char *delim)
     }
     else 
     {
-      printf("Loading dataset from file: %s", filepath_ptr);
+      printf("Loading dataset from file: %s\n", filepath_ptr);
     }
 
     char buf[1024] = {};
@@ -604,7 +600,6 @@ void assign_nearest_cluster(dataset_t *d, labels_t *data_labels,
   // start by assigning all data to the first(index 0) cluster
   memset(data_labels->data, 0, d->len * sizeof(uint32_t));
 
-  // #pragma omp parallel for
   for (uint32_t i = 0; i < d->len; ++i)
   {
     float min_dist = sq_euclidean_dist(d->data[i], centroids->data[0], 
@@ -729,6 +724,7 @@ float calc_silhouette(dataset_t *testing, labels_t *test_labels,
 {
   float mean_sil = 0.0;
 
+  #pragma omp parallel for
   for (uint32_t i = 0; i < testing->len; ++i)
   {
     uint32_t C = 0; // number of datapoints in the same cluster
