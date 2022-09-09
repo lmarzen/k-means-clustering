@@ -36,7 +36,6 @@ typedef struct results
 } results_t;
 
 
-
 // function prototypes
 dataset_t load_dataset(char *filepath_ptr, char *delim);
 void free_dataset(dataset_t *d);
@@ -47,7 +46,7 @@ void load_cv_subsets(dataset_t *src, dataset_t *testing, dataset_t *training,
 void free_subset(dataset_t *d);
 float silhouette_analysis(dataset_t *testing, dataset_t *training, 
                       uint32_t num_kmeans, uint32_t k, uint32_t max_iter, 
-                      uint32_t print);
+                      uint32_t print, char *clusters_out, char *centroids_out);
 results_t kmeans(dataset_t *d, uint32_t k, uint32_t max_iter);
 void free_results(results_t *d);
 void normalize(dataset_t *d);
@@ -64,27 +63,31 @@ float calc_silhouette(dataset_t *testing, labels_t *test_labels,
                       dataset_t *centroids);
 void print_dataset(dataset_t *d, char *delim);
 void print_dataset_pretty(dataset_t *d);
+void write_clusters(dataset_t *centroids, char *filepath_ptr, char *delim);
+void write_centroids(dataset_t *dataset, labels_t *data_labels, 
+                     char *filepath_ptr, char *delim);
 
 
 int main(int argc, char *argv[])
 {
   // default options
-  char    *input_filepath_ptr = "input.csv";
-  char    *output_clusters_filepath_ptr = "output_clusters.csv";
-  char    *output_centroids_filepath_ptr = "output_centroids.csv";
-  char    *delimiter = ","; // used when reading input and when write output
-  int32_t k = 0; // k == 0 will indicate that silhouette coefficients should
-                 // determine optimal k from k_min to k_max
-  int32_t k_min = 2;
-  int32_t k_max = 10;
-  int32_t max_iter = 100; // maximum allowed iterations in each k-means
-  int32_t num_kmeans = 100; // number of parallel executed k-means
-  int32_t k_fold = 10; // number of folds for cross validation
+  char     *input_filepath_ptr = "input.csv";
+  char     *output_clusters_filepath_ptr = "output_clusters.csv";
+  char     *output_centroids_filepath_ptr = "output_centroids.csv";
+  char     *delimiter = ","; // used when reading input and when write output
+  int32_t  k = 0; // k == 0 will indicate that silhouette coefficients should
+                  // determine optimal k from k_min to k_max
+  int32_t  k_min = 2;
+  int32_t  k_max = 10;
+  int32_t  max_iter = 100; // maximum allowed iterations in each k-means
+  int32_t  num_kmeans = 100; // number of parallel executed k-means
+  int32_t  k_fold = 10; // number of folds for cross validation
+  uint32_t normalize = 0; // normalize the dataset, true/false
 
   // process option flags
   uint32_t c = 0;
   opterr = 0;
-  while ((c = getopt (argc, argv, "i:d:k:M:m:b:n:f:t:")) != -1)
+  while ((c = getopt (argc, argv, "i:d:k:M:m:b:e:f:t:n")) != -1)
   {
     switch (c) 
     {
@@ -126,7 +129,7 @@ int main(int argc, char *argv[])
         return 1;
       }
       break;
-    case 'n':
+    case 'e':
       if (atoi(optarg) > 0) {
         k_min = atoi(optarg);
       } else {
@@ -146,12 +149,11 @@ int main(int argc, char *argv[])
       if (atoi(optarg) <= 0) {
         printf("Error: number of threads must be a positve integer.\n");
         return 1;
-      // } else if (atoi(optarg) > omp_get_num_threads()) {
-      //   printf("Error: maximum threads is %d.\n", omp_get_num_threads());
-      //   return 1;
       } else {
         omp_set_num_threads(atoi(optarg));
       }
+    case 'n':
+      normalize = 1;
       break;
     case '?':
       if (optopt == 'i' || optopt == 'd' || optopt == 'k' || optopt == 'M' || 
@@ -188,7 +190,11 @@ int main(int argc, char *argv[])
   srand(seed);
 
   dataset_t dataset = load_dataset(input_filepath_ptr, delimiter);
-  normalize(&dataset);
+  if (normalize)
+  {
+    normalize(&dataset);
+  }
+  
 
   if (k == 0)
   { // user did not specify a value for k, so silhouette coefficients will be
@@ -210,7 +216,7 @@ int main(int argc, char *argv[])
       {
         load_cv_subsets(&dataset, &testing, &training, f, k_fold);
         mean_sil += silhouette_analysis(&testing, &training, num_kmeans, ki, 
-                                        max_iter, 0);
+                                        max_iter, 0, NULL, NULL);
       }
 
       mean_sil = mean_sil / k_fold;
@@ -230,7 +236,9 @@ int main(int argc, char *argv[])
 
   // run analysis on entire dataset
   printf("\nPerforming analysis for k = %d\n", k);
-  silhouette_analysis(&dataset, &dataset, num_kmeans, k, max_iter, 1);
+  silhouette_analysis(&dataset, &dataset, num_kmeans, k, max_iter, 1, 
+                      output_clusters_filepath_ptr, 
+                      output_centroids_filepath_ptr);
 
   free_dataset(&dataset);
 } // end main()
@@ -242,7 +250,8 @@ int main(int argc, char *argv[])
  */
 float silhouette_analysis(dataset_t *testing, dataset_t *training, 
                           uint32_t num_kmeans, uint32_t k, uint32_t max_iter, 
-                          uint32_t print)
+                          uint32_t print, char *clusters_out, 
+                          char *centroids_out)
 {
   results_t best_results, tmp_results;
 
@@ -278,12 +287,12 @@ float silhouette_analysis(dataset_t *testing, dataset_t *training,
 
   if (print)
   {
-    puts("Centroids:");
+    printf("Centroids:\n");
     print_dataset_pretty(&best_results.centroids);
-    puts("Saving results to disk...");
-    // TODO
-    // print best clusters to terminal
-    // write output files
+    printf("Writing results to disk...");
+    write_clusters(&best_results.centroids, clusters_out, ",");
+    write_centroids(&training, &best_results.labels, centroids_out, ",");
+    printf(" done");
   }
   free_results(&best_results);
   return sil;
@@ -299,8 +308,8 @@ results_t kmeans(dataset_t *d, uint32_t k, uint32_t max_iter)
 {
   results_t r = {};
   r.centroids = init_centroids(k, d->attributes);
-  rand_centroids(d, &r.centroids); // centroids are assigned to random 
-                                         // data points
+  // centroids are assigned to random data points
+  rand_centroids(d, &r.centroids);
 
   // array to store the index of the nearest cluster(aka centroid) for each 
   // data point
@@ -832,3 +841,25 @@ void print_dataset_pretty(dataset_t *d)
     printf("%f}\n", d->data[i][j]);
   }
 } // end print_dataset_pretty()
+
+
+void write_clusters(dataset_t *centroids, char *filepath_ptr, char *delim)
+{
+    FILE *fp;
+
+    fp  = fopen (filepath_ptr, "w");
+    if(fp == NULL) {
+      printf("Error: %s could not be opened.\n", filepath_ptr);
+    }
+
+    fprintf(fp);
+
+
+} // end write_clusters()
+
+
+void write_centroids(dataset_t *dataset, labels_t *data_labels, 
+                     char *filepath_ptr, char *delim)
+{
+
+} // end write_centroids()
