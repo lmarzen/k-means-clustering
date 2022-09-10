@@ -49,7 +49,8 @@ float silhouette_analysis(dataset_t *testing, dataset_t *training,
                       uint32_t print, char *clusters_out, char *centroids_out);
 results_t kmeans(dataset_t *d, uint32_t k, uint32_t max_iter);
 void free_results(results_t *d);
-void normalize(dataset_t *d);
+void normalize_data(dataset_t *d);
+void randomize_data(dataset_t *d);
 dataset_t init_centroids(uint32_t k, uint32_t num_attributes);
 void rand_centroids(dataset_t *src, dataset_t *centroids);
 float sq_euclidean_dist(float *a, float *b, int dim);
@@ -82,12 +83,13 @@ int main(int argc, char *argv[])
   int32_t  max_iter = 100; // maximum allowed iterations in each k-means
   int32_t  num_kmeans = 100; // number of parallel executed k-means
   int32_t  k_fold = 10; // number of folds for cross validation
+  uint32_t randomize = 0; // randomize the dataset, true/false
   uint32_t normalize = 0; // normalize the dataset, true/false
 
   // process option flags
   uint32_t c = 0;
   opterr = 0;
-  while ((c = getopt (argc, argv, "i:d:k:M:m:b:e:f:t:n")) != -1)
+  while ((c = getopt (argc, argv, "i:d:k:M:m:b:e:f:t:rn")) != -1)
   {
     switch (c) 
     {
@@ -131,7 +133,7 @@ int main(int argc, char *argv[])
       break;
     case 'e':
       if (atoi(optarg) > 0) {
-        k_min = atoi(optarg);
+        num_kmeans = atoi(optarg);
       } else {
         printf("Error: number of parallel k-means must be a postive integer.\n");
         return 1;
@@ -152,6 +154,9 @@ int main(int argc, char *argv[])
       } else {
         omp_set_num_threads(atoi(optarg));
       }
+    case 'r':
+      randomize = 1;
+      break;
     case 'n':
       normalize = 1;
       break;
@@ -190,9 +195,13 @@ int main(int argc, char *argv[])
   srand(seed);
 
   dataset_t dataset = load_dataset(input_filepath_ptr, delimiter);
+  if (randomize)
+  {
+    randomize_data(&dataset);
+  }
   if (normalize)
   {
-    normalize(&dataset);
+    normalize_data(&dataset);
   }
   
 
@@ -211,12 +220,20 @@ int main(int argc, char *argv[])
       printf("Performing analysis for k = %d\n", ki);
       float mean_sil = 0.0;
 
-      // k-fold cross validation
-      for (int f = 0; f < k_fold; ++f)
+      if (k_fold > 1)
       {
-        load_cv_subsets(&dataset, &testing, &training, f, k_fold);
-        mean_sil += silhouette_analysis(&testing, &training, num_kmeans, ki, 
-                                        max_iter, 0, NULL, NULL);
+        // k-fold cross validation
+        for (uint32_t f = 0; f < k_fold; ++f)
+        {
+          load_cv_subsets(&dataset, &testing, &training, f, k_fold);
+          mean_sil += silhouette_analysis(&testing, &training, num_kmeans, ki, 
+                                          max_iter, 0, NULL, NULL);
+        }
+      }
+      else
+      { // k_fold == 1, test on entire dataset
+        mean_sil += silhouette_analysis(&dataset, &dataset, num_kmeans, ki, 
+                                          max_iter, 0, NULL, NULL);
       }
 
       mean_sil = mean_sil / k_fold;
@@ -283,16 +300,14 @@ float silhouette_analysis(dataset_t *testing, dataset_t *training,
                               &best_results.centroids);
   free(test_data_labels.data);
 
-
-
   if (print)
   {
     printf("Centroids:\n");
     print_dataset_pretty(&best_results.centroids);
     printf("Writing results to disk...");
     write_clusters(&best_results.centroids, clusters_out, ",");
-    write_centroids(&training, &best_results.labels, centroids_out, ",");
-    printf(" done");
+    write_centroids(training, &best_results.labels, centroids_out, ",");
+    printf(" done\n");
   }
   free_results(&best_results);
   return sil;
@@ -503,13 +518,13 @@ void free_subset(dataset_t *d)
 } // end free_subset()
 
 
-/* Normalizes data points to values between 0 and 1.
+/* Normalizes data points to values between 0 and 1 (inclusive).
  */
-void normalize(dataset_t *d)
+void normalize_data(dataset_t *d)
 {
   uint32_t i, j;
 
-  printf("Normalizing the dataset...\n");
+  printf("Normalizing the dataset...");
   
   float max[d->attributes];
   memset(max, 0, d->attributes * sizeof(float));
@@ -555,8 +570,26 @@ void normalize(dataset_t *d)
     }
   }
 
+  printf(" done\n");
   return;
-} // end normalize()
+} // end normalize_data()
+
+/* Randomizes the order of the dataset. This is important for folding.
+ * Assumes that srand() has been called.
+ */
+void randomize_data(dataset_t *d)
+{
+  printf("Randomizing the dataset...");
+
+  for (uint32_t i = 0; i < d->len; ++i)
+  {
+
+  }
+
+
+  printf(" done\n");
+  return;
+} // end randomize_data()
 
 
 /* Allocates space for k centroids with the specified number of attributes.
@@ -610,6 +643,7 @@ void rand_centroids(dataset_t *src, dataset_t *centroids)
   }
 
   free(rand_indices);
+  return;
 } // end rand_centroids()
 
 
@@ -773,7 +807,7 @@ float calc_silhouette(dataset_t *testing, labels_t *test_labels,
 {
   float mean_sil = 0.0;
 
-  #pragma omp parallel for
+  #pragma omp parallel for reduction(+:mean_sil)
   for (uint32_t i = 0; i < testing->len; ++i)
   {
     uint32_t C = 0; // number of datapoints in the same cluster
@@ -800,8 +834,15 @@ float calc_silhouette(dataset_t *testing, labels_t *test_labels,
       }
     }
 
-
     float s_i = (b_i - a_i) / fmax(a_i, b_i);
+    if (C == 0)
+    { // This can happen if there is a cluster with only 1 point in it.
+      // In this case the point is most definitely in the wrong cluster.
+      // This is more likely to occur with higher values for k and will cause
+      // a_i to be 'nan' and mess up everything. We can correct that here.
+      s_i = -1.0;
+    }
+
     mean_sil += s_i;
   }
 
@@ -824,6 +865,7 @@ void print_dataset(dataset_t *d, char *delim)
     printf("%f\n", d->data[i][j]);
   }
   printf("\n");
+  return;
 } // end print_dataset()
 
 /* Prints a dataset in a pretty to read format.
@@ -840,6 +882,7 @@ void print_dataset_pretty(dataset_t *d)
     }
     printf("%f}\n", d->data[i][j]);
   }
+  return;
 } // end print_dataset_pretty()
 
 
@@ -850,16 +893,45 @@ void write_clusters(dataset_t *centroids, char *filepath_ptr, char *delim)
     fp  = fopen (filepath_ptr, "w");
     if(fp == NULL) {
       printf("Error: %s could not be opened.\n", filepath_ptr);
+      return;
     }
 
-    fprintf(fp);
+    for (uint32_t i = 0; i < centroids->len; ++i)
+    {
+      uint32_t j;
+      for (j = 0; j < centroids->attributes - 1; ++j)
+      {
+        fprintf(fp, "%f%s", centroids->data[i][j], delim);
+      }
+      fprintf(fp, "%f\n", centroids->data[i][j]);
+    }
 
-
+    fclose (fp);
+    return;
 } // end write_clusters()
 
 
 void write_centroids(dataset_t *dataset, labels_t *data_labels, 
                      char *filepath_ptr, char *delim)
 {
+  FILE *fp;
 
+  fp  = fopen (filepath_ptr, "w");
+  if(fp == NULL) {
+    printf("Error: %s could not be opened.\n", filepath_ptr);
+    return;
+  }
+
+  for (uint32_t i = 0; i < dataset->len; ++i)
+  {
+    uint32_t j;
+    for (j = 0; j < dataset->attributes; ++j)
+    {
+      fprintf(fp, "%f%s", dataset->data[i][j], delim);
+    }
+    fprintf(fp, "%d\n", data_labels->data[i]);
+  }
+
+  fclose (fp);
+  return;
 } // end write_centroids()
