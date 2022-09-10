@@ -82,7 +82,7 @@ int main(int argc, char *argv[])
   int32_t  k_max = 10;
   int32_t  max_iter = 100; // maximum allowed iterations in each k-means
   int32_t  num_kmeans = 100; // number of parallel executed k-means
-  int32_t  k_fold = 10; // number of folds for cross validation
+  int32_t  k_fold = 8; // number of folds for cross validation
   uint32_t randomize = 0; // randomize the dataset, true/false
   uint32_t normalize = 0; // normalize the dataset, true/false
 
@@ -580,12 +580,17 @@ void normalize_data(dataset_t *d)
 void randomize_data(dataset_t *d)
 {
   printf("Randomizing the dataset...");
-
-  for (uint32_t i = 0; i < d->len; ++i)
+  if (d->len > 1) 
   {
-
+    uint32_t i;
+    for (i = 0; i < d->len - 1; i++) 
+    {
+      uint32_t j = i + rand() / (RAND_MAX / (d->len - i) + 1);
+      float *tmp = d->data[j];
+      d->data[j] = d->data[i];
+      d->data[i] = tmp;
+    }
   }
-
 
   printf(" done\n");
   return;
