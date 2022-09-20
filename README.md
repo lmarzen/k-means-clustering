@@ -1,11 +1,11 @@
 # k-means-clustering
-This project is a C implementation of the k-means clustering algorithm that has been parallelized to run across multiple threads with OpenMP.
+This project is a C implementation of the k-means clustering algorithm that has been parallelized to run across multiple threads with OpenMP and uses silhouette coefficients to find an optimal number of clusters.
 
-This algorithm first attempts to identify an optimal number of cluster to solve for using silhouette coeffients that are averaged over k-folds. The dataset is parsed from a file and split into training and testing datasets and uses k-folds cross-validation. Once silhouette coeffients have been calculated for a range of k values, a target k is selected and centroids are calculated on the entire dataset.
+This algorithm first attempts to identify an optimal number of clusters to solve for, using silhouette coefficients that are averaged over k-folds. The dataset is parsed from a file and split into training and testing datasets and uses k-folds cross-validation. Once silhouette coefficients have been calculated for a range of k values, a target k is selected, and centroids are calculated on the entire dataset.
 
-This implemenation can handle datasets of arbirary dimeninsion and length. The expected input format is a comma seperated, but the delimiter can be changed with the '-d' flag. For an example dataset see data/iris.csv.
+This implementation can handle datasets of arbitrary dimension and length. The expected input format is a comma-separated, but the delimiter can be changed with the '-d' flag. For an example dataset, see data/iris.csv.
 
-Two output files will be generated in the directory of the binary. The first 'output_clusters.csv' will be the dataset with an additional column indicating which cluster each point belongs to. The second file is 'output_centroids.csv' that contains the coordinates of the centroids.
+Two output files will be generated in the directory of the binary. The first 'output_clusters.csv' will be the dataset with an additional column indicating which cluster each point belongs to. The second file is 'output_centroids.csv', which contains the coordinates of the centroids.
 
 
 Options
@@ -32,7 +32,7 @@ Must be a positive integer.
 <ul>
 Specify the minimum number of clusters to analyze during silhouette analysis.
 </ul><ul>
-Must be a postive integer.
+Must be a positive integer.
 </ul><ul>
 Default is 2.
 </ul>
@@ -40,7 +40,7 @@ Default is 2.
 <ul>
 Specify the maximum number of clusters to analyze during silhouette analysis.
 </ul><ul>
-Must be a postive integer.
+Must be a positive integer.
 </ul><ul>
 Default is 10.
 </ul>
@@ -48,7 +48,7 @@ Default is 10.
 <ul>
 Maximum allowed iterations in each k-means.
 </ul><ul>
-Must be a postive integer.
+Must be a positive integer.
 </ul><ul>
 Default is 100.
 </ul>
@@ -56,23 +56,23 @@ Default is 100.
 <ul>
 Number of parallel executed k-means.
 </ul><ul>
-Must be a postive integer.
+Must be a positive integer.
 </ul><ul>
 Default is 100.
 </ul>
 -f [num_folds]
 <ul>
-Number of folds for cross validation
+Number of folds for cross-validation.
 </ul><ul>
-Must be a postive integer.
+Must be a positive integer.
 </ul><ul>
 Default is 5.
 </ul>
 -t [num_threads]
 <ul>
-Number of threads to spread workload across.
+Number of threads to spread the workload across.
 </ul><ul>
-Must be a postive integer.
+Must be a positive integer.
 </ul><ul>
 Default behavior will use all available threads.
 </ul>
@@ -82,7 +82,7 @@ Randomize the dataset order. It is important that the dataset is randomized for 
 </ul>
 -n
 <ul>
-Normalize the dataset. This is a good idea if dataset is not already normalized.
+Normalize the dataset. This is a good idea if the dataset is not already normalized.
 </ul>
 
 Getting Started
