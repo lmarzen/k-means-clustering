@@ -911,7 +911,7 @@ void write_centroids(dataset_t *centroids, char *filepath_ptr, char *delim)
     fprintf(fp, "%f\n", centroids->data[i][j]);
   }
 
-  fclose (fp);
+  fclose(fp);
   return;
 } // end write_centroids()
 
@@ -937,6 +937,6 @@ void write_clusters(dataset_t *dataset, labels_t *data_labels,
     fprintf(fp, "%d\n", data_labels->data[i]);
   }
 
-  fclose (fp);
+  fclose(fp);
   return;
 } // end write_centroids()
