@@ -82,7 +82,7 @@ int main(int argc, char *argv[])
   int32_t  k_max = 10;
   int32_t  max_iter = 100; // maximum allowed iterations in each k-means
   int32_t  num_kmeans = 100; // number of parallel executed k-means
-  int32_t  k_fold = 8; // number of folds for cross validation
+  int32_t  k_fold = 5; // number of folds for cross validation
   uint32_t randomize = 0; // randomize the dataset, true/false
   uint32_t normalize = 0; // normalize the dataset, true/false
 
@@ -162,8 +162,8 @@ int main(int argc, char *argv[])
       break;
     case '?':
       if (optopt == 'i' || optopt == 'd' || optopt == 'k' || optopt == 'M' || 
-          optopt == 'm' || optopt == 'e' || optopt == 'b' || optopt == 'n' ||
-          optopt == 'f' || optopt == 't' )
+          optopt == 'm' || optopt == 'e' || optopt == 'b' || optopt == 'f' || 
+          optopt == 't' )
         fprintf (stderr, "Option -%c requires an argument.\n", optopt);
       else if (isprint (optopt))
         fprintf (stderr, "Unknown option '-%c'.\n", optopt);
