@@ -895,7 +895,7 @@ void write_centroids(dataset_t *centroids, char *filepath_ptr, char *delim)
 {
   FILE *fp;
 
-  fp  = fopen (filepath_ptr, "w");
+  fp = fopen (filepath_ptr, "w");
   if(fp == NULL) {
     printf("Error: %s could not be opened.\n", filepath_ptr);
     return;
@@ -921,7 +921,7 @@ void write_clusters(dataset_t *dataset, labels_t *data_labels,
 {
   FILE *fp;
 
-  fp  = fopen (filepath_ptr, "w");
+  fp = fopen (filepath_ptr, "w");
   if(fp == NULL) {
     printf("Error: %s could not be opened.\n", filepath_ptr);
     return;
