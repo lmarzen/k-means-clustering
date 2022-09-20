@@ -893,26 +893,26 @@ void print_dataset_pretty(dataset_t *d)
 
 void write_centroids(dataset_t *centroids, char *filepath_ptr, char *delim)
 {
-    FILE *fp;
+  FILE *fp;
 
-    fp  = fopen (filepath_ptr, "w");
-    if(fp == NULL) {
-      printf("Error: %s could not be opened.\n", filepath_ptr);
-      return;
-    }
-
-    for (uint32_t i = 0; i < centroids->len; ++i)
-    {
-      uint32_t j;
-      for (j = 0; j < centroids->attributes - 1; ++j)
-      {
-        fprintf(fp, "%f%s", centroids->data[i][j], delim);
-      }
-      fprintf(fp, "%f\n", centroids->data[i][j]);
-    }
-
-    fclose (fp);
+  fp  = fopen (filepath_ptr, "w");
+  if(fp == NULL) {
+    printf("Error: %s could not be opened.\n", filepath_ptr);
     return;
+  }
+
+  for (uint32_t i = 0; i < centroids->len; ++i)
+  {
+    uint32_t j;
+    for (j = 0; j < centroids->attributes - 1; ++j)
+    {
+      fprintf(fp, "%f%s", centroids->data[i][j], delim);
+    }
+    fprintf(fp, "%f\n", centroids->data[i][j]);
+  }
+
+  fclose (fp);
+  return;
 } // end write_centroids()
 
 
