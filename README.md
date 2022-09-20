@@ -3,7 +3,7 @@ This project is a C implementation of the k-means clustering algorithm that has 
 
 This algorithm first attempts to identify an optimal number of clusters to solve for, using silhouette coefficients that are averaged over k-folds. The dataset is parsed from a file and split into training and testing datasets and uses k-folds cross-validation. Once silhouette coefficients have been calculated for a range of k values, a target k is selected, and centroids are calculated on the entire dataset.
 
-This implementation can handle datasets of arbitrary dimension and length. The expected input format is a comma-separated, but the delimiter can be changed with the '-d' flag. For an example dataset, see data/iris.csv.
+This implementation can handle datasets of arbitrary dimension and length. The expected input format is comma-separated, but the delimiter can be changed with the '-d' flag. For an example dataset, see data/iris.csv.
 
 Two output files will be generated in the directory of the binary. The first 'output_clusters.csv' will be the dataset with an additional column indicating which cluster each point belongs to. The second file is 'output_centroids.csv', which contains the coordinates of the centroids.
 
