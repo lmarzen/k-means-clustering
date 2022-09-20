@@ -64,9 +64,9 @@ float calc_silhouette(dataset_t *testing, labels_t *test_labels,
                       dataset_t *centroids);
 void print_dataset(dataset_t *d, char *delim);
 void print_dataset_pretty(dataset_t *d);
-void write_clusters(dataset_t *centroids, char *filepath_ptr, char *delim);
-void write_centroids(dataset_t *dataset, labels_t *data_labels, 
-                     char *filepath_ptr, char *delim);
+void write_centroids(dataset_t *centroids, char *filepath_ptr, char *delim);
+void write_clusters(dataset_t *dataset, labels_t *data_labels, 
+                    char *filepath_ptr, char *delim);
 
 
 int main(int argc, char *argv[])
@@ -305,8 +305,8 @@ float silhouette_analysis(dataset_t *testing, dataset_t *training,
     printf("Centroids:\n");
     print_dataset_pretty(&best_results.centroids);
     printf("Writing results to disk...");
-    write_clusters(&best_results.centroids, clusters_out, ",");
-    write_centroids(training, &best_results.labels, centroids_out, ",");
+    write_centroids(&best_results.centroids, clusters_out, ",");
+    write_clusters(training, &best_results.labels, centroids_out, ",");
     printf(" done\n");
   }
   free_results(&best_results);
@@ -891,7 +891,7 @@ void print_dataset_pretty(dataset_t *d)
 } // end print_dataset_pretty()
 
 
-void write_clusters(dataset_t *centroids, char *filepath_ptr, char *delim)
+void write_centroids(dataset_t *centroids, char *filepath_ptr, char *delim)
 {
     FILE *fp;
 
@@ -913,11 +913,11 @@ void write_clusters(dataset_t *centroids, char *filepath_ptr, char *delim)
 
     fclose (fp);
     return;
-} // end write_clusters()
+} // end write_centroids()
 
 
-void write_centroids(dataset_t *dataset, labels_t *data_labels, 
-                     char *filepath_ptr, char *delim)
+void write_clusters(dataset_t *dataset, labels_t *data_labels, 
+                    char *filepath_ptr, char *delim)
 {
   FILE *fp;
 
