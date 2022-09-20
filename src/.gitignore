@@ -1,1 +1,4 @@
 *.csv
+kmeans
+kmeans_x64.exe
+kmeans_x86.exe

@@ -1,7 +1,5 @@
 kmeans: kmeans.c
 	gcc kmeans.c -o kmeans -Wall -lm -fopenmp -O2
-	i686-w64-mingw32-gcc kmeans.c -o kmeans_x86.exe -Wall -fopenmp -O2
-	x86_64-w64-mingw32-gcc kmeans.c -o kmeans_x64.exe -Wall -fopenmp -O2
 linux: kmeans.c
 	gcc kmeans.c -o kmeans -Wall -lm -fopenmp -O2
 win32: kmeans.c
