@@ -2,8 +2,6 @@ CC = gcc
 
 kmeans: kmeans.c
 	$(CC) kmeans.c -o kmeans -Wall -lm -fopenmp -O2
-kmeans-gpu-offload: kmeans-gpu-offload.c
-	$(CC) kmeans-gpu-offload.c -o kmeans-gpu-offload -Wall -lm -fopenmp -O2
 linux: kmeans.c
 	$(CC) kmeans.c -o kmeans -Wall -lm -fopenmp -O2
 win32: kmeans.c
